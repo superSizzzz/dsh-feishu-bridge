@@ -226,6 +226,94 @@ The design goal: being on your phone is not a reason to lose a decision, and bei
 the desk is not a reason to wait for a phone. Cards also carry numbered option buttons —
 tapping one sends that answer back (requires the `card.action.trigger` subscription).
 
+## Real output
+
+What arrives in Feishu is a card, not plain text. The **structure** below is captured
+from a real run (the body is model-written each time, so wording varies; paths and
+content are generalised):
+
+**Stage summary** — sent only once there is enough material; silent when little happened:
+
+```text
++---------------------------------------------+
+| What this stage got done . turn 12          |
+| (bot name)                                  |
++---------------------------------------------+
+| workspace  ~/projects/my-app                |
+| session    #A3F2  fix image upload . turn 12|
++---------------------------------------------+
+| All three bugs in the image path are        |
+| located: the data is under data.messages,   |
+| not items; the resource key is embedded in  |
+| text as [Image: img_v3_...]; and --type is  |
+| a required flag that --help never lists.    |
+| The download step is verified working.      |
++---------------------------------------------+
+```
+
+**Work summary** — sent automatically at the end, narrative plus the full change list:
+
+```text
++---------------------------------------------+
+| Work summary                                |
+| (bot name)                                  |
++---------------------------------------------+
+| workspace  ~/projects/my-app                |
+| session    #A3F2  fix image upload          |
+| elapsed    17:35 -> 17:50 . 6 turns . 216 calls|
++---------------------------------------------+
+| The image upload path now works end to end. |
+| Three separate problems - wrong field, a    |
+| key hidden in text, and an undocumented     |
+| required flag - are all fixed, with the     |
+| download step verified.                     |
+|                                             |
+| Files touched (2 files  +111 -0)            |
+|   src/upload.ts           +58 -0            |
+|   src/types.ts            +53 -0            |
++---------------------------------------------+
+```
+
+**Question card** — options render as a list plus tappable buttons:
+
+```text
++---------------------------------------------+
+| Need your call                              |
++---------------------------------------------+
+| Both A and B reach the goal - which do you  |
+| prefer?                                     |
+|                                             |
+|  1. Option A - smaller change, but adds a   |
+|     dependency                              |
+|  2. Option B - no dependency, but ~100 more |
+|     lines                                   |
+|                                             |
+|  [ Option A ]   [ Option B ]                |
++---------------------------------------------+
+```
+
+## Permissions, external services, and compatibility
+
+Worth knowing before you install.
+
+| Item | Detail |
+|---|---|
+| **Feishu permissions** | `im:message`, `im:message:send_as_bot` (required, send/receive); `im:message:readonly` (optional, card buttons only) |
+| **Feishu events** | `im.message.receive_v1` (required, long-connection mode); `card.action.trigger` (optional, buttons only). **The long connection needs no public URL and opens no port** |
+| **External services** | 1) Feishu open platform (messages, via lark-cli); 2) the model provider you configured in dsh - every message pushed to you (opening report, stage summary, work summary, chat) is model-written, so **session content is sent to that provider** with those requests |
+| **Local storage** | `$DSH_HOME/dsh-feishu-bridge/state.json` holds your bound `open_id`, session short codes and titles, and chat history; `boot.log` holds startup self-checks. Both stay local and are never uploaded |
+| **Network listening** | **No new port.** The config page only registers a route (`/feishu-bridge/config`) on dsh's existing HTTP server |
+| **Outbound connections** | Only Feishu and your model provider |
+| **Data boundary** | No telemetry, no analytics - there is no tracking code in this repo |
+| **Platform** | Windows / macOS / Linux (requires Node >= 22 and [lark-cli](https://www.npmjs.com/package/@larksuite/cli)) |
+| **dsh version** | `>= 0.1.7-rc.2` |
+| **Output frequency** | Speaks at three moments by default (opening / stage done / wrap-up); three levels of silence: `/mute`, `turnPush: off`, `enabled: false` |
+
+> **Why these permissions**: `im:message` reads messages (your instructions), and
+> `im:message:send_as_bot` sends as the bot (reports). It requests no contacts, docs,
+> calendar, or any other scope. Feishu `open_id` is scoped per app, so the plugin can
+> only ever see people who have messaged this bot.
+
 ## Troubleshooting
 
 **Plugin does not load** — check `$DSH_HOME/dsh-feishu-bridge/boot.log`. It records
