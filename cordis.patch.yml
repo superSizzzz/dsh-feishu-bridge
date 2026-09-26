@@ -1,0 +1,15 @@
+# 本插件自带的挂载声明。
+#
+# dsh 通过 package.json 的 `dsh.bundle.patch` 找到这个文件，所以
+# `dsh plugin --profile web add dsh-feishu-bridge` 装完就是一个 profile layer，
+# 不需要用户手改自己的 ~/.dsh/cordis.patch.yml。
+#
+# 想调开关（openPush / thinkingJudge / turnPush / persona 等）时，
+# 在你自己的 patch 层写同 id 的条目覆盖即可 —— 上层覆盖下层。
+- insert:
+    - id: feishu-bridge
+      name: 'dsh-feishu-bridge'
+      config:
+        # 换成你自己的 lark-cli profile 名。其余项都有合理默认值，
+        # 也可以在 dsh 设置页的「飞书桥」里改（含 bot 身份与人设）。
+        profile: dsh-bridge

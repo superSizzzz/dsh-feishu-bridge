@@ -1,0 +1,22 @@
+# 依赖
+node_modules/
+
+# 本地运行时状态：里面有会话 id、绑定的 open_id 这类属于你环境的运行时事实，
+# 不要提交。
+*.log
+boot.log
+state.json
+*.local.*
+
+# 开发过程中的临时产物与设计草稿
+# PLAN.md 记录了本机环境细节（应用 id、路径、用户名），只用于本地开发。
+tmp-*.json
+/tmp-*.json
+PLAN.md
+
+# 编辑器与操作系统
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

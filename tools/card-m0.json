@@ -1,0 +1,73 @@
+{
+  "schema": "2.0",
+  "config": {
+    "width_mode": "default"
+  },
+  "header": {
+    "title": {
+      "tag": "plain_text",
+      "content": "🐋 大肥鲸已上线"
+    },
+    "subtitle": {
+      "tag": "plain_text",
+      "content": "链路自检 · 出站 / 入站 / 事件订阅"
+    },
+    "template": "green"
+  },
+  "body": {
+    "direction": "vertical",
+    "padding": "12px 12px 20px 12px",
+    "elements": [
+      {
+        "tag": "column_set",
+        "flex_mode": "none",
+        "horizontal_spacing": "medium",
+        "columns": [
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "background_style": "green-50",
+            "padding": "8px",
+            "elements": [
+              {
+                "tag": "markdown",
+                "content": "**出站发送**\n✅ 已连通"
+              }
+            ]
+          },
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "background_style": "green-50",
+            "padding": "8px",
+            "elements": [
+              {
+                "tag": "markdown",
+                "content": "**入站接收**\n✅ 已连通"
+              }
+            ]
+          },
+          {
+            "tag": "column",
+            "width": "weighted",
+            "weight": 1,
+            "background_style": "green-50",
+            "padding": "8px",
+            "elements": [
+              {
+                "tag": "markdown",
+                "content": "**事件订阅**\n✅ 长连接"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "tag": "markdown",
+        "content": "M0 环境打通完成，**大肥鲸**已经能听能说了。\n下一步：接入 dsh 插件，推送阶段结论与改动总结。"
+      }
+    ]
+  }
+}

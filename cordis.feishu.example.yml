@@ -1,0 +1,16 @@
+# dsh-feishu-bridge 的挂载示例。
+#
+# 把下面这段追加到 ~/.dsh/cordis.patch.yml（home 层，对所有 profile 生效），
+# 然后把 <...> 换成你自己的值。
+#
+# 前置条件：包名必须能被 dsh 解析 —— 见 README「快速开始」里的两条 junction。
+#
+# 为什么不写完整配置？除了这三项，其余都有合理默认值。
+# 想调开关（openPush / thinkingJudge 等）再加对应字段即可。
+- insert:
+    - id: feishu-bridge
+      name: 'dsh-feishu-bridge'          # 包名，不要写成 file:/// 路径
+      config:
+        profile: <你的 lark-cli profile 名>   # 例如 dsh-bridge
+        # userId 留空即可：给机器人发一句话就会自动认领你的 open_id。
+        # 想手工指定就填：userId: ou_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
