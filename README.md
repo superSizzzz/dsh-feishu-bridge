@@ -15,18 +15,19 @@ DeepSeek Harness 的双向飞书桥：dsh 干活时把**阶段结论**推到飞�
 把下面整段直接发给你的 dsh agent，它会自己装完并把结果报给你：
 
 ```text
-帮我在本机安装 dsh-feishu-bridge 插件（飞书 ↔ dsh 双向桥）。
+帮我安装 dsh-feishu-bridge 插件（飞书 ↔ dsh 双向桥）。
 
-1. 把仓库 clone 到 ~/dsh-feishu-bridge，下面记为 <PLUGIN_DIR>。
-2. 用包名装进 web profile：
-     dsh plugin --profile web add <PLUGIN_DIR>
-   本地目录要写成 link: 前缀，例如 `dsh plugin --profile web add link:D:\path\to\dsh-feishu-bridge`。
-   这条命令会转发给 pnpm 装依赖，并自动把插件的 bundle 层登记进 profile，
-   所以**不需要你手改任何 patch 文件**。
-3. 检查前置条件：lark-cli 已安装，且 `lark-cli --profile dsh-bridge whoami` 能返回 appId。
-   如果这个 profile 还不存在，先停下来告诉我 —— 建飞书应用需要我自己在浏览器里操作。
-4. 重启 dsh 让新插件生效。
-5. 报告三件事：插件有没有加载成功（看 ~/.dsh/dsh-feishu-bridge/boot.log）、
+仓库地址：https://github.com/superSizzzz/dsh-feishu-bridge
+
+1. 用这一条命令装进 web profile：
+     dsh plugin --profile web add github:superSizzzz/dsh-feishu-bridge
+   它会把参数转发给 pnpm，从 GitHub 拉取并安装，同时自动把插件的 bundle 层
+   登记进 profile —— 所以**不用 clone 仓库、也不用手改任何 patch 文件**。
+2. 检查前置条件：lark-cli 已安装，且 `lark-cli --profile dsh-bridge whoami`
+   能返回 appId。如果这个 profile 还不存在，先停下来告诉我 ——
+   建飞书应用需要我自己在浏览器里操作。
+3. 重启 dsh 让新插件生效。
+4. 报告三件事：插件有没有加载成功（看 ~/.dsh/dsh-feishu-bridge/boot.log）、
    设置页里有没有出现「飞书桥」一栏、我接下来要在飞书做什么。
 ```
 

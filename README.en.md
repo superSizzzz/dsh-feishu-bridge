@@ -72,17 +72,19 @@ Paste this whole block to your dsh agent:
 ```text
 Install the dsh-feishu-bridge plugin on this machine (a two-way bridge between dsh and a Feishu bot).
 
-1. Clone the repo to ~/dsh-feishu-bridge; call it <PLUGIN_DIR> below.
-2. Install it into the web profile by package name:
-     dsh plugin --profile web add <PLUGIN_DIR>
-   (use `link:<PLUGIN_DIR>` if you are installing from a local checkout —
-   both forms work; `add` registers the plugin's bundle layer automatically.)
-3. Check the prerequisite: lark-cli is installed and
+Repo: https://github.com/superSizzzz/dsh-feishu-bridge
+
+1. Install it into the web profile with this one command:
+     dsh plugin --profile web add github:superSizzzz/dsh-feishu-bridge
+   It forwards to pnpm, pulls and installs from GitHub, and automatically registers
+   the plugin's bundle layer in the profile — so there is NO need to clone the repo
+   and NO need to edit any patch file.
+2. Check the prerequisite: lark-cli is installed and
      lark-cli --profile dsh-bridge whoami
    returns an appId. If that profile does not exist yet, STOP and tell me —
    creating a Feishu app requires me to click through the browser myself.
-4. Restart dsh so the new plugin loads.
-5. Report three things: whether the plugin loaded (check ~/.dsh/dsh-feishu-bridge/boot.log),
+3. Restart dsh so the new plugin loads.
+4. Report three things: whether the plugin loaded (check ~/.dsh/dsh-feishu-bridge/boot.log),
    whether a "飞书桥" section appears in dsh Settings, and what I need to do in Feishu next.
 ```
 
