@@ -368,9 +368,14 @@ http://127.0.0.1:3080/feishu-bridge/config
 
 1. **dsh 直载 TS 走 Node 的 strip-only 模式**，不支持 TypeScript **参数属性**
    （`constructor(private readonly x: T)`）→ 必须显式声明字段再赋值，否则插件加载静默失败。
-2. **必须 Node 直调 CLI**：`spawn(process.execPath, [<cli>/scripts/run.js, ...args])`。
-   走 `lark-cli.ps1` 会被包装层把正常 stderr 变成 `NativeCommandError`；Windows PowerShell 5.1
-   传原生参数还会吞掉 JSON 双引号，`--content '{...}'` 必然报 not valid JSON。
+2. **CLI 要走原生二进制，别走 `scripts/run.js`**：run.js 只是转发脚本，内部用
+   `execFileSync(bin, args, { stdio: 'inherit' })` 调原生二进制，**且不带 `windowsHide`**。
+   在终端里跑（web profile）父子共用同一个控制台看不出问题；换成没有控制台的宿主
+   （**Electron 桌面版**），那个子进程只能自己新建控制台 —— 表现就是「每发一条消息
+   闪一个黑窗」，两条长连接还各占一个常驻窗口。
+   做法：优先解析 `bin/lark-cli.exe` 直接 spawn，并**始终带 `windowsHide: true`**。
+   另外 `lark-cli.ps1` 的包装层会把正常 stderr 变成 `NativeCommandError`，
+   且 Windows PowerShell 5.1 会吞掉 JSON 双引号 —— 用 argv 数组调用，别拼命令行字符串。
 3. **事件流子进程只能靠关 stdin 或 SIGTERM 结束**，`kill -9` 会泄漏服务端订阅。
 4. **`event consume` 输出的 `content` 已被预解码成纯文本**，不要再 `fromjson`。
 5. **飞书 open_id 是应用维度的**，换应用就要重新取一次。

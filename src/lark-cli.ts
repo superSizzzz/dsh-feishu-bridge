@@ -16,7 +16,8 @@ import type { ChildProcess } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** 全局 npm 安装下 CLI 入口的相对尾段。 */
+/** 全局 npm 安装下的两条候选路径：优先原生二进制，其次转发脚本。 */
+const CLI_BIN_TAIL = ['npm', 'node_modules', '@larksuite', 'cli', 'bin', 'lark-cli']
 const RUN_JS_TAIL = ['npm', 'node_modules', '@larksuite', 'cli', 'scripts', 'run.js']
 
 export interface CliOptions {
@@ -47,16 +48,51 @@ export interface Target {
   id: string
 }
 
-/** 探测 CLI 入口：优先用配置，其次扫全局 npm 目录。 */
+/** 全局 npm 根目录候选。 */
+function npmRoots(): string[] {
+  return [
+    process.env.APPDATA ?? '',
+    process.env.USERPROFILE === undefined ? '' : join(process.env.USERPROFILE, 'AppData', 'Roaming'),
+  ].filter((root) => root.length > 0)
+}
+
+/**
+ * 探测 CLI 入口。
+ *
+ * **优先返回原生二进制**（`bin/lark-cli.exe`），只有找不到时才退回 `scripts/run.js`
+ * —— 直连二进制并自己带 `windowsHide`，才不会在桌面版里弹出控制台窗口。
+ */
 export function resolveCliEntry(configured: string): string {
   if (configured.length > 0) return configured
-  const roots = [process.env.APPDATA, process.env.USERPROFILE === undefined ? undefined : join(process.env.USERPROFILE, 'AppData', 'Roaming')]
+  const roots = npmRoots()
   for (const root of roots) {
-    if (root === undefined || root.length === 0) continue
+    const candidate = join(root, ...CLI_BIN_TAIL) + (process.platform === 'win32' ? '.exe' : '')
+    if (existsSync(candidate)) return candidate
+  }
+  for (const root of roots) {
     const candidate = join(root, ...RUN_JS_TAIL)
     if (existsSync(candidate)) return candidate
   }
-  return join(process.env.APPDATA ?? '', ...RUN_JS_TAIL)
+  return join(roots[0] ?? '', ...RUN_JS_TAIL)
+}
+
+/**
+ * 起一个 CLI 子进程。
+ *
+ * 入口是脚本（`.js`）就用宿主的 node 跑；是原生二进制就**直接执行**。
+ * 两种都带 `windowsHide` —— 这是桌面版不弹控制台的关键。
+ */
+function spawnCli(
+  opts: CliOptions,
+  args: string[],
+  stdio: 'ignore' | 'pipe' | Array<'ignore' | 'pipe'>,
+): ChildProcess {
+  const isScript = /\.(?:js|mjs|cjs)$/i.test(opts.entry)
+  const spawnOptions = { windowsHide: true, stdio } as const
+  const argv = ['--profile', opts.profile, ...args]
+  return isScript
+    ? spawn(process.execPath, [opts.entry, ...argv], spawnOptions)
+    : spawn(opts.entry, argv, spawnOptions)
 }
 
 /** 从 CLI 的 stdout 里取出结果 JSON（CLI 正常路径只输出一个 JSON 文档）。 */
@@ -85,10 +121,7 @@ export function runLark(args: string[], opts: CliOptions): Promise<CliResult> {
     let stdout = ''
     let stderr = ''
     let settled = false
-    const child = spawn(process.execPath, [opts.entry, '--profile', opts.profile, ...args], {
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    const child = spawnCli(opts, args, ['ignore', 'pipe', 'pipe'])
 
     const timer = opts.timeoutMs === undefined
       ? undefined
@@ -122,10 +155,7 @@ export function runLark(args: string[], opts: CliOptions): Promise<CliResult> {
 /** 起一个长驻 lark-cli 子进程（事件流用），调用方负责读 stdout 与收尾。 */
 export function spawnLarkStream(args: string[], opts: CliOptions): ChildProcess {
   // stdin 留 pipe：关闭它就是这个子进程约定的优雅退出信号。
-  return spawn(process.execPath, [opts.entry, '--profile', opts.profile, ...args], {
-    windowsHide: true,
-    stdio: ['pipe', 'pipe', 'pipe'],
-  })
+  return spawnCli(opts, args, ['pipe', 'pipe', 'pipe'])
 }
 
 /** 去掉开头的 `🐋 大肥鲸` 署名与换行，并把过长正文截断，保证卡片不超 30KB。 */
