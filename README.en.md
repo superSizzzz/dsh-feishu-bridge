@@ -1,73 +1,71 @@
 # dsh-feishu-bridge
 
-Two-way bridge between [DeepSeek Harness](https://github.com/deepseek-ai) (dsh) and a Feishu / Lark bot.
+English | [中文](README.md)
 
-dsh pushes **stage conclusions** and **questions that need your input** to Feishu; you reply in the Feishu chat and it flows back into the dsh session. When the work is done, dsh sends a **work summary**.
+Working with dsh usually means sitting in front of the machine. Step away and you lose
+the thread — you can't see how far it got, you can't answer the question it's stuck on,
+and by the time you're back it may have been waiting on you for twenty minutes.
 
-**Table of Contents**
+This plugin runs a line between dsh and a Feishu (Lark) bot. dsh reports to you in
+Feishu, you reply there, and your messages land in the session so it keeps going.
 
-- [What it does](#what-it-does)
-- [How it reports](#how-it-reports)
+## Contents
+
 - [Install](#install)
+- [When it talks](#when-it-talks)
+- [What it looks like](#what-it-looks-like)
 - [Configure](#configure)
 - [Feishu commands](#feishu-commands)
 - [Chat mode](#chat-mode)
-- [How the question bridge works](#how-the-question-bridge-works)
-- [Troubleshooting](#troubleshooting)
-- [Development](#development)
-
----
-
-## What it does
-
-| Direction | Behaviour |
-|---|---|
-| dsh → Feishu | Opening report, stage conclusions, work summary, and any `ask_user_question` prompt |
-| Feishu → dsh | Plain text (including images) is delivered into the session as a user message |
-| Feishu commands | `/help` `/stop` `/list` `/use` `/mute` `/chat` `/work` … see the table below |
-| Feishu cards | Questions render as cards; option buttons send the answer back |
-
-It is **not**:
-
-- a public webhook service — it rides lark-cli's long connection, no inbound port needed
-- a modification to dsh core — it is a regular plugin
-- an outbound-only notifier — the Feishu chat is a real input channel into the session
-
-## How it reports
-
-Three layers with **different natures** — that distinction is the whole design:
-
-| When | Nature | What it says |
-|---|---|---|
-| You send dsh a message | **Fixed action**, always sent | Opened work: how it plans to approach it |
-| End of each turn | **Model judgement** (`turnPush: judge`) | Sent only if there is something worth reporting |
-| Work finishes | Fixed action | Work summary: what was done + full change list |
-
-**Stage conclusions are accumulated, not fired per sentence.** Thinking is gathered
-since the last report; once there is enough for a real summary, the model is asked
-one question — *"what was actually accomplished here?"* — and an answer of `NONE`
-means it keeps accumulating. It only reports **work that is already done**
-("I'm about to…" / "next I'll…" are explicitly not reported).
-
-A `feishu_notify` policy is also injected into the system prompt, so the model knows
-from the first message that it can push a conclusion on its own.
-
-Three layers of quiet, when you want silence:
-
-- `/mute` in Feishu — silences the current session (not persisted)
-- `turnPush: off` / `thinkPush: false` — global switches in config
-- `enabled: false` — turns the whole bridge off
+- [The question bridge](#the-question-bridge)
+- [Permissions](#permissions)
+- [Uninstall](#uninstall)
+- [FAQ](#faq)
+- [Hacking on it](#hacking-on-it)
+- [License](#license)
 
 ## Install
 
-The plugin needs **both halves** to load: a server half (`src/`) and a client half
-(`lib/client.js`, which renders the settings page inside dsh). Because of that it
-must be resolvable **by package name** — a `file:///` entry is not picked up by the
-client module scan.
+```powershell
+dsh plugin --profile web add github:superSizzzz/dsh-feishu-bridge
+```
 
-### Option 1: let an AI agent do it (recommended)
+One command. dsh reads the package's `dsh.bundle.patch` and folds it into the current
+profile, so there's no config file to write by hand.
 
-Paste this whole block to your dsh agent:
+Then one more step: **send the bot a message in Feishu.**
+
+That's how it learns who you are. It reads your open_id off that message and only ever
+serves you. Feishu scopes open_id per app, so there is nowhere to copy it from — letting
+the plugin claim it is both easier and less likely to be wrong.
+
+| | Requirement |
+|---|---|
+| dsh | >= 0.1.7-rc.2 |
+| Node | >= 22 |
+| lark-cli | installed globally, see below |
+| Feishu app | your own, with `im:message` + `im:message:send_as_bot` |
+
+If you don't have a Feishu app yet:
+
+```bash
+npm i -g @larksuite/cli
+lark-cli config init --new --name dsh-bridge
+```
+
+The browser walks you through creating one. Then in the open platform give it two
+permissions (`im:message`, `im:message:send_as_bot`) and subscribe (under
+**event subscriptions**) to `im.message.receive_v1` in **long-connection mode** — that
+mode needs no public URL and opens no port.
+
+For card buttons, add `im:message:readonly` and `card.action.trigger`. Without them
+everything still works, the buttons just don't respond.
+
+Install it once per profile; swap the name after `--profile`.
+
+### Or have an agent do it
+
+Paste this to your dsh agent:
 
 ```text
 Install the dsh-feishu-bridge plugin on this machine (a two-way bridge between dsh and a Feishu bot).
@@ -76,273 +74,239 @@ Repo: https://github.com/superSizzzz/dsh-feishu-bridge
 
 1. Install it into the web profile with this one command:
      dsh plugin --profile web add github:superSizzzz/dsh-feishu-bridge
-   It forwards to pnpm, pulls and installs from GitHub, and automatically registers
-   the plugin's bundle layer in the profile — so there is NO need to clone the repo
-   and NO need to edit any patch file.
+   It forwards to pnpm and registers the plugin's bundle layer in the profile
+   automatically — no need to clone the repo, no need to edit any config file.
 2. Check the prerequisite: lark-cli is installed and
      lark-cli --profile dsh-bridge whoami
-   returns an appId. If that profile does not exist yet, STOP and tell me —
-   creating a Feishu app requires me to click through the browser myself.
-3. Restart dsh so the new plugin loads.
+   returns an appId. If that profile does not exist yet, stop and tell me —
+   creating a Feishu app is something I have to click through myself.
+3. Restart dsh so the plugin loads.
 4. Report three things: whether the plugin loaded (check ~/.dsh/dsh-feishu-bridge/boot.log),
-   whether a "飞书桥" section appears in dsh Settings, and what I need to do in Feishu next.
+   whether a "飞书桥" section shows up in dsh Settings, and what I need to do in Feishu next.
 ```
 
-### Option 2: manual install
+## When it talks
 
-**1. Install lark-cli and create a Feishu bot**
+By default it speaks at three moments. Everything in between is quiet.
 
-```bash
-npm i -g @larksuite/cli
-lark-cli config init --new --name dsh-bridge
+**The moment you give it work, it says what it's about to do.** No judgement involved —
+this one is fixed, every time.
+
+**When a stage produces a result, it reports.** This one accumulates: thinking is
+buffered, and only once there is something worth saying does it ask the model one
+question — *what did this stage actually get done?* An answer of `NONE` means keep
+buffering.
+
+The reason for the indirection: reporting sentence by sentence turns into noise. A
+stream of "looking at this file" / "now editing that function" is just the terminal log
+relocated into Feishu. So the bar is fixed and narrow — **it only reports finished
+work**. "I'm about to…" and "next I'll…" don't count. If nothing got done, it stays
+quiet and saves it for later.
+
+**When the work is over, it sends a summary.** What it did, which files it touched, how
+many lines went in and came out.
+
+Want it chattier? Set `turnPush` to `always` and it reports every turn.
+
+Want it quiet for a while? Send `/mute` in Feishu. Want it properly off? Set `enabled`
+to `false`.
+
+## What it looks like
+
+Feishu gets cards. Below is the structure from a real run (the body is model-written, so
+wording varies; paths and content are generalised):
+
+```text
+┌────────────────────────────────────────────┐
+│ What this stage got done · turn 12          │
+│ (bot name)                                  │
+├────────────────────────────────────────────┤
+│ workspace  ~/projects/my-app                │
+│ session    #A3F2  fix image upload · turn 12│
+├────────────────────────────────────────────┤
+│ All three bugs in the image path are        │
+│ located: the data is under data.messages,   │
+│ not items; the resource key is embedded in  │
+│ text as [Image: img_v3_...]; and --type is  │
+│ a required flag that --help never lists.    │
+│ The download step is verified working.      │
+└────────────────────────────────────────────┘
 ```
 
-In the Feishu open platform, enable for this app:
+The wrap-up adds a change list:
 
-- Permissions: `im:message`, `im:message:send_as_bot` (required); add `im:message:readonly` for card buttons
-- Event subscriptions (**long connection mode**): `im.message.receive_v1` (required), `card.action.trigger` (optional, only for buttons)
-
-**2. Install the plugin**
-
-```bash
-# from npm (once published)
-dsh plugin --profile web add dsh-feishu-bridge
-
-# or from a local checkout
-dsh plugin --profile web add link:/path/to/dsh-feishu-bridge
-
-# or straight from GitHub
-dsh plugin --profile web add github:superSizzzz/dsh-feishu-bridge
+```text
+┌────────────────────────────────────────────┐
+│ Work summary                                │
+│ (bot name)                                  │
+├────────────────────────────────────────────┤
+│ workspace  ~/projects/my-app                │
+│ session    #A3F2  fix image upload          │
+│ elapsed    17:35 → 17:50 · 6 turns · 216 calls│
+├────────────────────────────────────────────┤
+│ The image upload path now works end to end. │
+│ Three separate problems — a wrong field, a  │
+│ key hidden in text, and an undocumented     │
+│ required flag — are all fixed, with the     │
+│ download step verified.                     │
+│                                             │
+│ Files touched (2 files  +111 −0)            │
+│   src/upload.ts           +58 −0            │
+│   src/types.ts            +53 −0            │
+└────────────────────────────────────────────┘
 ```
 
-`dsh plugin` forwards to pnpm and registers the plugin's `dsh.bundle` layer, so it is
-**auto-mounted** — you do not edit any patch file. Restart dsh afterwards.
-
-> Adding a plugin always needs a restart. `patchReload: live` only covers config
-> changes to entries that are already loaded; a newly added bundle is not picked up
-> by hot reload.
-
-**3. Let it recognise you (no open_id needed)**
-
-Find your bot in Feishu and **send it any message**. The plugin reads your `open_id`
-from the event stream, remembers it, and replies to confirm.
-
-> Feishu `open_id` is **scoped per app**, so it cannot be copied from anywhere else.
-> Auto-claim is both the easiest and the least error-prone way.
-
-**4. Done**
-
-You can now message dsh directly, send `/help` for commands, or `/chat` for chat mode.
+The short code on the session line (`#A3F2`) is the routing identity — `/use` switches
+targets by it. The title after it is for humans. The title comes from dsh's title
+service when available, otherwise from the first few words you sent.
 
 ## Configure
 
-Two entry points, same config, whichever you use.
+Two entry points, same config underneath, use whichever.
 
-### Entry 1: dsh Settings (recommended)
+**dsh Settings** (recommended): open Settings and there's a **飞书桥** section in the
+left nav. Four things to change — which bot, who's bound, which model chat mode uses,
+and the persona.
 
-Open dsh **Settings** — there is a **"飞书桥"** section in the left nav. It lets you change:
-
-| Field | Meaning |
-|---|---|
-| **Feishu bot** | Which Feishu app this bridge uses: a lark-cli profile name, or the bot's app id (`cli_xxx` — a profile name defaults to the app id). Changing it means changing bots; see below |
-| **Bound user** | Your `open_id`. Empty = unbind; the next person to message the bot is auto-claimed |
-| **Chat model** | provider / model for `/chat`; empty falls back to the dsh default |
-| **Persona** | The speaking style used for every message pushed to you (opening report, stage summary, work summary, chat). Empty falls back to the config default |
-
-Read-only: bot name, resolved app id, state file location. **Saving takes effect
-immediately, no restart.**
-
-**Changing the bot**: the inbound connection is rebuilt and the **bound user is cleared** —
-Feishu `open_id` is scoped per app, so the old id no longer points at the same person.
-Send the new bot a message to re-claim.
-
-### Entry 2: open it in a browser
+**Or open it in a browser:**
 
 ```
 http://127.0.0.1:3080/feishu-bridge/config
 ```
 
-Same content as a standalone page. 3080 is dsh web's port — substitute yours if you
-changed `--port`.
+That's dsh web's port; substitute yours if you changed it.
 
-> **Security note**: dsh's HTTP server binds to `127.0.0.1` by default and requires a
-> login token, so neither entry point adds its own auth — anyone who can open them can
-> already use dsh on this machine. If you set the web server to `0.0.0.0`, both are
-> exposed to the network; add a reverse proxy and auth in that case.
-
-### Behaviour switches
-
-`openPush` / `thinkPush` / `turnPush` / `thinkingJudge` / `summaryPush` stay in the
-**config file**, not the settings page — they are set once when installing. Override
-them by adding an entry with the same id to your own patch layer (upper layers win):
+Saving takes effect immediately, no restart. Behaviour switches (`turnPush`,
+`thinkingJudge`, and friends) stay out of the UI — they're install-time decisions. To
+change one, add an entry to your own patch:
 
 ```yaml
-# ~/.dsh/cordis.patch.yml
-- insert:
-    - id: feishu-bridge
-      config:
-        turnPush: always      # report every turn
-        thinkingJudge: false  # disable per-stage judgement
+- id: feishu-bridge
+  config:
+    turnPush: always
+    thinkingJudge: false
 ```
+
+| Field | Default | Meaning |
+|---|---|---|
+| `enabled` | `true` | master switch |
+| `profile` | `dsh-bridge` | which lark-cli profile; an app id works too |
+| `userId` | `''` | delivery target. **Leave it empty** — the first message claims it |
+| `promptSection` | `true` | write a "you can use feishu_notify" section into the system prompt |
+| `openPush` | `true` | say what it's about to do; fixed action |
+| `turnPush` | `judge` | per-turn policy: `judge` / `always` / `changes` / `off` |
+| `thinkingJudge` | `true` | judge each stage for a result worth reporting |
+| `pendingMinChars` | `400` | how much text to accumulate before asking the model |
+| `summaryPush` | `true` | the wrap-up summary |
+| `writerEnabled` | `true` | copy is model-written, not templated |
+| `persona` | 女高中生 | the voice it speaks in |
 
 ## Feishu commands
 
-| Command | What it does |
+Send these in Feishu and they're treated as commands.
+
+| Command | Does |
 |---|---|
-| `/help` | Command list |
-| `/status` | Current bindings, target, mode |
-| `/list` | Sessions seen so far (short code + title + workspace + status) |
-| `/use <code>` | Switch the default delivery target |
-| `/stop` | Interrupt the running agent |
-| `/mute` `/unmute` | Silence / resume pushes for the current session |
-| `/chat` `/work` | Toggle chat mode / work mode |
-| `/polish <text>` | Rewrite a draft in the configured persona |
-| `/mode` | Show the current mode |
-| `/config` | View or change runtime config |
-| `/forget` | Clear chat history |
+| `/help` | command list |
+| `/status` | current binding, target, mode |
+| `/list` | sessions seen so far, with short codes and titles |
+| `/use <code>` | switch which session gets delivery |
+| `/stop` | interrupt the running agent |
+| `/mute` `/unmute` | quiet for now / resume |
+| `/chat` `/work` | chat mode / back to work |
+| `/polish <text>` | rewrite a passage in the configured persona |
+| `/config` | view or change runtime config |
+| `/forget` | clear chat history |
+
+Anything that isn't a command goes straight into the session, the same as typing at the
+machine.
+
+Images work too — it downloads them and hands them to the attachment service, so the
+model can see them.
 
 ## Chat mode
 
-`/chat` switches the Feishu side into a **plain chat** — it talks to the model and
-**never touches dsh**: no session, no tools, no workspace. `/work` goes back.
+After `/chat`, Feishu becomes an ordinary chat window: it talks to the model and
+**never touches dsh** — no session, no tools, no workspace. `/work` goes back.
 
-Chat uses the dsh API key by default. The model can be changed in the settings page or
-via `/config chatModel <name>`.
+It uses your dsh key. The model is changeable in the settings page.
 
-History persists in `state.json`, but the mode itself deliberately does not — a restart
-returns to work mode.
+History persists locally, but the **mode doesn't** — restarting dsh returns you to work
+mode. That's deliberate: you shouldn't end up chatting with a bot that isn't doing
+anything and not know it.
 
-## How the question bridge works
+## The question bridge
 
-When dsh needs to ask you something (`ask_user_question`), the plugin races two channels:
+When dsh needs to ask you something (`ask_user_question`), the plugin does two things at
+once: it pushes the question to Feishu as a card, and **the web side keeps waiting**.
 
-1. The question is pushed to Feishu as a card
-2. Meanwhile the **web session stays open** and waits
+Whichever you answer first wins. Answer in Feishu and the web prompt gets dismissed;
+answer on the web and the Feishu card is edited to say it was answered there.
 
-Whichever you answer first wins; the other side is cancelled. If neither responds in
-time (`questionTimeoutMs`, 5 minutes by default), it behaves as if you never answered.
+The point is not losing either end: answering at the desk is fastest, answering from a
+phone is sometimes the only option. If neither side answers (5 minutes by default), it
+behaves as if you never replied and moves on — it won't leave the agent hung.
 
-The design goal: being on your phone is not a reason to lose a decision, and being at
-the desk is not a reason to wait for a phone. Cards also carry numbered option buttons —
-tapping one sends that answer back (requires the `card.action.trigger` subscription).
+Card options are tappable buttons; one tap sends the answer back.
 
-## Real output
+## Permissions
 
-What arrives in Feishu is a card, not plain text. The **structure** below is captured
-from a real run (the body is model-written each time, so wording varies; paths and
-content are generalised):
-
-**Stage summary** — sent only once there is enough material; silent when little happened:
-
-```text
-+---------------------------------------------+
-| What this stage got done . turn 12          |
-| (bot name)                                  |
-+---------------------------------------------+
-| workspace  ~/projects/my-app                |
-| session    #A3F2  fix image upload . turn 12|
-+---------------------------------------------+
-| All three bugs in the image path are        |
-| located: the data is under data.messages,   |
-| not items; the resource key is embedded in  |
-| text as [Image: img_v3_...]; and --type is  |
-| a required flag that --help never lists.    |
-| The download step is verified working.      |
-+---------------------------------------------+
-```
-
-**Work summary** — sent automatically at the end, narrative plus the full change list:
-
-```text
-+---------------------------------------------+
-| Work summary                                |
-| (bot name)                                  |
-+---------------------------------------------+
-| workspace  ~/projects/my-app                |
-| session    #A3F2  fix image upload          |
-| elapsed    17:35 -> 17:50 . 6 turns . 216 calls|
-+---------------------------------------------+
-| The image upload path now works end to end. |
-| Three separate problems - wrong field, a    |
-| key hidden in text, and an undocumented     |
-| required flag - are all fixed, with the     |
-| download step verified.                     |
-|                                             |
-| Files touched (2 files  +111 -0)            |
-|   src/upload.ts           +58 -0            |
-|   src/types.ts            +53 -0            |
-+---------------------------------------------+
-```
-
-**Question card** — options render as a list plus tappable buttons:
-
-```text
-+---------------------------------------------+
-| Need your call                              |
-+---------------------------------------------+
-| Both A and B reach the goal - which do you  |
-| prefer?                                     |
-|                                             |
-|  1. Option A - smaller change, but adds a   |
-|     dependency                              |
-|  2. Option B - no dependency, but ~100 more |
-|     lines                                   |
-|                                             |
-|  [ Option A ]   [ Option B ]                |
-+---------------------------------------------+
-```
-
-## Permissions, external services, and compatibility
-
-Worth knowing before you install.
-
-| Item | Detail |
+| | |
 |---|---|
-| **Feishu permissions** | `im:message`, `im:message:send_as_bot` (required, send/receive); `im:message:readonly` (optional, card buttons only) |
-| **Feishu events** | `im.message.receive_v1` (required, long-connection mode); `card.action.trigger` (optional, buttons only). **The long connection needs no public URL and opens no port** |
-| **External services** | 1) Feishu open platform (messages, via lark-cli); 2) the model provider you configured in dsh - every message pushed to you (opening report, stage summary, work summary, chat) is model-written, so **session content is sent to that provider** with those requests |
-| **Local storage** | `$DSH_HOME/dsh-feishu-bridge/state.json` holds your bound `open_id`, session short codes and titles, and chat history; `boot.log` holds startup self-checks. Both stay local and are never uploaded |
-| **Network listening** | **No new port.** The config page only registers a route (`/feishu-bridge/config`) on dsh's existing HTTP server |
-| **Outbound connections** | Only Feishu and your model provider |
-| **Data boundary** | No telemetry, no analytics - there is no tracking code in this repo |
-| **Platform** | Windows / macOS / Linux (requires Node >= 22 and [lark-cli](https://www.npmjs.com/package/@larksuite/cli)) |
-| **dsh version** | `>= 0.1.7-rc.2` |
-| **Output frequency** | Speaks at three moments by default (opening / stage done / wrap-up); three levels of silence: `/mute`, `turnPush: off`, `enabled: false` |
+| Feishu scopes | only `im:message` and `im:message:send_as_bot` |
+| Feishu events | only `im.message.receive_v1` (plus optional `card.action.trigger`) |
+| Network listening | **no new port**. The config page reuses dsh's own HTTP server |
+| Outbound | Feishu, and the model provider you configured |
+| Disk | only `$DSH_HOME/dsh-feishu-bridge/` (state file and log) |
+| Telemetry | none. There is no analytics code in this repo |
 
-> **Why these permissions**: `im:message` reads messages (your instructions), and
-> `im:message:send_as_bot` sends as the bot (reports). It requests no contacts, docs,
-> calendar, or any other scope. Feishu `open_id` is scoped per app, so the plugin can
-> only ever see people who have messaged this bot.
+One thing worth stating plainly: every message pushed to you (opening report, stage
+summary, wrap-up, chat) **is written by the model**, so session content goes to your
+model provider with those requests. Know that before installing.
 
-## Troubleshooting
+On the Feishu side it touches no contacts, no docs, no calendar. open_id is scoped per
+app, so the plugin can only ever see people who have messaged this bot.
 
-**Plugin does not load** — check `$DSH_HOME/dsh-feishu-bridge/boot.log`. It records
-apply/config/whoami/inbox-lock/greeting/prompt-section lines. A bare
-`1 entry did not activate` in dsh's own output means something threw during `apply()`.
+## Uninstall
 
-**Not receiving messages** — run `lark-cli --profile <name> whoami`; if `available` is
-false the bot identity is broken. Also check whether another dsh instance holds the
-inbound lock (see below).
+```powershell
+dsh plugin --profile web remove dsh-feishu-bridge
+```
 
-**Nothing gets pushed** — `/mute` may be on, or `enabled` / `turnPush` may be off.
+State lives in `$DSH_HOME/dsh-feishu-bridge/`; delete that directory to clean up
+entirely. The Feishu app and its permissions are yours to deal with in the open
+platform — the plugin has no say there.
 
-**A plugin source edit has no effect** — plugin code is not hot-reloaded; restart dsh.
+## FAQ
 
-> **`dsh plugin` notes**: it forwards to pnpm, so `add` / `remove` / `why` all work;
-> `remove` also unregisters the bundle layer. Git-hosted plugins (`github:user/repo`)
-> build on install via their `prepare` script, which pnpm blocks until allowed — add
-> the key pnpm prints under `allowBuilds` in the profile's `pnpm-workspace.yaml`
-> and re-run.
+**Installed, but nothing happens?** Send the bot a message first. Until it's claimed you
+it doesn't know where to deliver, so it stays quiet.
 
-## Development
+**Messages get no response?** Check `$DSH_HOME/dsh-feishu-bridge/boot.log` — startup
+self-checks land there. Also note that when two dsh instances run on one machine, only
+one of them receives Feishu messages (chosen by a pid lock); the other only reports
+local sessions.
+
+**Console windows popping up on the desktop build?** Older versions did; it's fixed.
+The cause wasn't dsh — lark-cli's `scripts/run.js` is just a forwarder, and when it
+calls the native binary internally it doesn't pass `windowsHide`. You never notice in a
+terminal; on desktop there's no console, so that child process has to create one. It now
+calls the native binary directly. Upgrade and it's gone.
+
+**Edited the source and nothing changed?** Plugin code isn't hot-reloaded. Restart dsh.
+
+**Want to rename the bot?** Do it in the open platform. The plugin asks for the current
+name at startup and puts it into the prompt.
+
+## Hacking on it
 
 ```
 src/
 ├── index.ts        plugin entry: config, wiring, command routing, lifecycle
 ├── config.ts       schemastery config schema
 ├── config-page.ts  config page (standalone local HTML form, no build step)
-├── lark-cli.ts     lark-cli wrapper (send/patch/download/identity)
-├── inbox.ts        generic NDJSON event consumer for a given EventKey
+├── lark-cli.ts     lark-cli wrapper (send, download, identity)
+├── inbox.ts        generic NDJSON event consumer for any EventKey
 ├── outbox.ts       throttling, idempotency, patch-in-place
 ├── render.ts       Feishu Card 2.0 builders
 ├── reporter.ts     session event listeners, accumulation, summary material
@@ -350,31 +314,41 @@ src/
 ├── writer.ts       turn material into copy via the model
 ├── chat.ts         chat mode engine
 └── tools.ts        feishu_notify / feishu_summary / feishu_silence
-lib/client.js       client half: the "飞书桥" section in dsh Settings (hand-written, no bundler)
+lib/client.js       the client half: the "飞书桥" section in dsh Settings. Hand-written, no bundler
 tools/              standalone smoke-test scripts
 ```
 
-### Pitfalls worth knowing
+Things we stepped on, so you don't have to.
 
-- **dsh loads TS in strip-only mode** — TypeScript parameter properties are unsupported;
-  declare fields explicitly.
-- **Prompt variable names must match `/^[a-z][a-z0-9_]*$/`** — one uppercase letter and
-  registration throws, which propagates out of `apply()` and stops the whole plugin
-  from activating.
-- **An unregistered `{{variable}}` in a prompt section makes assembly throw** — that
-  breaks the system prompt for *every* session, not just this plugin. Always guarantee
-  the variable resolves, or substitute statically.
-- **Getting a service is not synchronous** — `ctx.get('webServer')` in `apply()` often
-  returns `undefined` because load order is not guaranteed. Use
-  `ctx.inject(['webServer'], cb)`.
-- **The client half must be resolvable by package name** — `dsh-client-modules` scans
-  Loader entries and reads `dsh.client` + `exports["./client"]` from package.json.
-- **Reasoning models need headroom** — `deepseek-flash` spends tokens on
-  `reasoning-delta` before any `text-delta`. A low `maxTokens` yields an empty reply
-  that looks like a model failure.
-- **lark-cli `.ps1` wrappers corrupt stderr** on Windows, and PowerShell 5.1 strips
-  JSON double quotes — call `node <cli>/scripts/run.js` with an argv array instead.
+**dsh loads TS in strip-only mode** — TypeScript parameter properties
+(`constructor(private readonly x: T)`) aren't supported. Declare fields explicitly, or
+the plugin silently fails to load.
+
+**Prompt variable names must match `/^[a-z][a-z0-9_]*$/`.** I wrote `feishuBotName`,
+uppercase letters and all, and registration threw on the spot. That error propagates out
+of `apply()`, so **the whole plugin fails to activate** — not just the prompt section.
+
+**An unregistered `{{variable}}` in a prompt section makes assembly throw.** That
+breaks the system prompt for *every* session, not just this plugin. Either guarantee the
+variable resolves, or substitute it statically at registration time.
+
+**Getting a service is not synchronous.** `ctx.get('webServer')` in `apply()` often
+returns `undefined` because load order isn't guaranteed. Use
+`ctx.inject(['webServer'], cb)` and wait for it.
+
+**The client half must be resolvable by package name.** `dsh-client-modules` scans
+Loader entries by package name and reads `dsh.client` plus `exports["./client"]` from
+package.json. A `file:///` entry isn't picked up.
+
+**Leave headroom for reasoning models.** `deepseek-flash` spends tokens on reasoning
+before writing anything, so a small `maxTokens` gives you an empty reply that looks like
+a broken model. Start at 3000.
+
+**Don't batch-edit UTF-8 files with PowerShell's `Get-Content`/`Set-Content`.** PS 5.1
+reads as ANSI by default, so Chinese text is already mojibake on the way in, and
+`-Encoding UTF8` only covers the write side. I destroyed a README this way. Use an
+editor or a file API.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT, see [LICENSE](./LICENSE).
